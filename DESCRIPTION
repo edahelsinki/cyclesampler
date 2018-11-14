@@ -8,7 +8,7 @@ Description: A property-preserving Markov Chain Monte Carlo method for
 	     are constrained to an interval and vertex weights are
 	     preserved exactly, and (ii) edge and vertex weights are
 	     both constrained to intervals.
-Depends: R (>= 3.5.1)
+Depends: R (>= 3.5)
 License: MIT + file LICENSE
 Encoding: UTF-8
 RoxygenNote: 6.1.0
