@@ -105,4 +105,4 @@ We also observe that the node weights are preserved exactly for all nodes:
 
 License
 -------
-The `cyclesampler` R-package is licensed under the [MIT-license](http://opensource.org/licenses/MIT).
+The `cyclesampler` R-package is licensed under the [MIT-license](https://github.com/edahelsinki/cyclesampler/blob/master/LICENSE).
