@@ -39,13 +39,13 @@ running_time <- as.numeric(args[6])                  ## estimate running time (B
 convergence  <- as.numeric(args[7])                  ## estimate convergence (Boolean)
 ## -----------------------------------------------------------------------------
 
-
 data <- read_data(name = ds$fname, basepath = datadir)
 
 res  <- c(ds, get_data_properties(data))
 
 out <- list()
-out$t_normalize <- system.time( data <- normalizedata(data) )[3]
+
+out$t_normalize <- system.time( data <- normalizedata(data, scale_values = FALSE) )[3]
 out$t_init      <- system.time( X    <- cyclesampler(data, a = rep(min(data[, 3]), nrow(data)), b = rep(max(data[, 3]), nrow(data)) ))[3]
 
 ## -----------------------------------------------------------------------------
@@ -61,7 +61,8 @@ saveRDS(res, file = paste0(outputdir, "/", ds$name, "_prop.rds"), compress = "xz
 ## -----------------------------------------------------------------------------
 ##
 if (running_time) {
-    out$t_sample <- system.time( tmp  <- X$samplecycles2(n = X$getncycles()) )[3]
+    out$t_sample         <- replicate(10, system.time( tmp  <- X$samplecycles2(n = X$getncycles()) )[3])
+    out$t_sample_average <- mean(out$t_sample)
     saveRDS(out, file = paste0(outputdir, "/", ds$name, "_running_time.rds"), compress = "xz")
 }
 

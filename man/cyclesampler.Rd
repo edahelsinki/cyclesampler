@@ -8,11 +8,10 @@ cyclesampler(data, a = rep(0, dim(data)[1]), b = rep(1, dim(data)[1]),
   useC = TRUE, nukezeros = TRUE)
 }
 \arguments{
-\item{data}{nX3 matrix containing triplets (first 2 columns and the
-random state (data[,3]). The data matrix should be normalized
-so that the random states are in the interval [0,1] and that
-the row and column indices are continous, i.e., there is no
-node to which there are no links.}
+\item{data}{n X 3 matrix containing triplets (first 2 columns and
+the random state (data[, 3]). The data matrix should be
+normalized so that the row and column indices are continous,
+i.e., there is no node to which there are no links.}
 }
 \value{
 Returns two function $getstate() that gives the current

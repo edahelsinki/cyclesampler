@@ -110,6 +110,8 @@ descaledata <- function(x,minv=1,maxv=5,drange=maxv-minv+1,toint=TRUE) {
 #'
 #' @param data data matrix where columns indicate row indices, column
 #'     indices and values, respectively
+#' @param scale_values Should the values be scaled to the (0, 1)
+#'     interval. Default is \code{FALSE}.
 #' @return Data matrix with rows and columns re-indexed so that there
 #'     are no empty rows and columns.
 #'
@@ -117,10 +119,14 @@ descaledata <- function(x,minv=1,maxv=5,drange=maxv-minv+1,toint=TRUE) {
 normalizedata <- function(data,
                           minv=min(data[,3]),
                           maxv=max(data[,3]),
-                          drange=maxv-minv+1) {
+                          drange=maxv-minv+1,
+                          scale_values = FALSE) {
     data[,1] <- nonzero(data[,1])$p[data[,1]]
     data[,2] <- nonzero(data[,2])$p[data[,2]]+max(data[,1])
-    data[,3] <- scaledata(data[,3],minv=minv,maxv=maxv,drange=drange)
+
+    if (scale_values)
+        data[,3] <- scaledata(data[,3],minv=minv,maxv=maxv,drange=drange)
+
     data
 }
 
@@ -521,37 +527,44 @@ findmerge <- function(bft,depth,left,right) {
 
 #' Cyclesampler object.
 #'
-#' @param data nX3 matrix containing triplets (first 2 columns and the
-#'     random state (data[,3]). The data matrix should be normalized
-#'     so that the random states are in the interval [0,1] and that
-#'     the row and column indices are continous, i.e., there is no
-#'     node to which there are no links.
+#' @param data n X 3 matrix containing triplets (first 2 columns and
+#'     the random state (data[, 3]). The data matrix should be
+#'     normalized so that the row and column indices are continous,
+#'     i.e., there is no node to which there are no links.
 #' @return Returns two function $getstate() that gives the current
 #'     random state and $samplecycles(n) that samples n cycles.
 #'
 #' @export
 cyclesampler <- function(data,
-                         a=rep(0,dim(data)[1]),
-                         b=rep(1,dim(data)[1]),
+                         a=rep(0, dim(data)[1]),
+                         b=rep(1, dim(data)[1]),
                          useC=TRUE,
                          nukezeros=TRUE) {
+
     triplets <- as.matrix(data[,1:2])
+
     if(nukezeros)
-        triplets <- matrix(nonzero(triplets)$p[triplets],
-                           dim(triplets)[1],2)
+        triplets <- matrix(nonzero(triplets)$p[triplets], dim(triplets)[1], 2)
+
     randomstate <- data[,3]
 
-    if(any(triplets<1) || any(randomstate<0 | 1<randomstate))
-        stop("cyclesampler: invalid data.\n")
+    if (any(randomstate < a) | any(randomstate > b))
+        stop("cyclesampler: edge weights outside bounds.\n")
 
     graph <- makegraph(triplets)
-    aux <- BFS(graph)
-    bft <- aux$bft
-    depth <- aux$depth
-    st <- aux$st
-    idx <- bft2idx(bft,triplets)
-    idx0 <- setdiff(1:dim(triplets)[1],idx)
-    idx0st <- st[triplets[idx0,1]]
+
+    ## order the graph according to node strengths
+    nw      <- get_node_weights(data)
+    graph   <- lapply(graph, function(nl) nl[order(nw[nl], decreasing = TRUE)])
+    aux     <- BFS(graph, root = which.max(nw))
+
+    bft     <- aux$bft
+    depth   <- aux$depth
+    st      <- aux$st
+    idx     <- bft2idx(bft,triplets)
+    idx0    <- setdiff(1:dim(triplets)[1],idx)
+    idx0st  <- st[triplets[idx0,1]]
+
     slength <- sapply(idx0,
                       function(i) 
                           (1+depth[triplets[i,1]]+depth[triplets[i,2]]
@@ -559,8 +572,8 @@ cyclesampler <- function(data,
                                                  triplets[i,1],
                                                  triplets[i,2])]))
     idx0odd <- slength%%2==1
-    odds <- lapply(1:max(st),function(i) idx0[idx0odd & idx0st==i])
-    f <- if(useC) samplecyclesC else samplecycles
+    odds    <- lapply(1:max(st),function(i) idx0[idx0odd & idx0st==i])
+    f       <- if(useC) samplecyclesC else samplecycles
 
     list(
         getstate = function() { randomstate },
@@ -670,8 +683,10 @@ maxentsampler <- function(data) {
     rs <- data[,3]
     rs2 <- rep(rs,2)
     uu <- sort(unique(c(triplets)))
+
     if(any(rs<0) || any(1<rs) || any(uu!=1:length(uu)))
         stop("maxentsampler: invalid data.\n")
+
     n <- dim(triplets)[1]
     rows <- findrows(c(triplets[,1],triplets[,2]))
     m <- length(rows)
@@ -748,10 +763,7 @@ addselfloops <- function(data,A,B) {
 #'
 #' @export
 get_node_weights <- function(data) {
-    rs2  <- rep(data[,3], 2)
-    rows <- findrows(c(data[,1], data[,2]))
-    W    <- sapply(rows, function(i) sum(rs2[i]))
-
-    list("m" = mean(data[, 3]), # edge weights
-         "W" = W)               # node weights
+    rs2  <- rep(data[, 3], 2)
+    rows <- findrows(c(data[, 1], data[, 2]))
+    sapply(rows, function(i) sum(rs2[i]))
 }

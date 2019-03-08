@@ -177,8 +177,9 @@ samplecycles2C(int *iter, /* # of iterations */
     delta = dmin+(dmax-dmin)*unif_rand();
 
     /* Increment the acceptance rate counter if delta is non-zero */
-
-    *accepted_moves += (delta != 0);
+    if (delta != 0) {
+	*accepted_moves++;
+    }
     
     for(int i=0; i<s.n; i++) {
 	int j=s.stack[i];

@@ -43,15 +43,15 @@ get_data_properties <- function(triplets, values = NULL) {
 ## Utilities for estimating the convergence
 ## ======================================================================
 
-#' Calculate the Frobenius norm between two vectors
+#' Calculate the L2 norm between two vectors
 #'
 #' @param v1 A vector
 #' @param v2 A vector
 #'
-#' @return The Frobenius norm between v1 and v2.
+#' @return The L2 norm between v1 and v2.
 #'
 #' @export
-frobenius_norm <- function(v1, v2) {
+l2_norm <- function(v1, v2) {
     sqrt(sum((v1 - v2)^2))
 }
 
@@ -70,21 +70,20 @@ sample_and_return_state <- function(X, n_steps) {
 }
 
 
-#' Return the development of the Frobenius norm when running the sampler.
+#' Return the development of the L2 norm when running the sampler.
 #'
-#' Calculates the Frobenius norm with respect to the state when calling the function.
+#' Calculates the L2 norm with respect to the state when calling the function.
 #' The number of cycles is used as the thinning.
 #'
 #' @param X A cyclesampler object.
 #' @param n_samples The number of samples to obtain
 #' @param ind The indices of the true edges in the graph (used to exclude self-loops)
 #'
-#' @return The Frobenius norm for each of the n_samples with respect to the starting state.
+#' @return The L2 norm for each of the n_samples with respect to the starting state.
 #'
 #' @export
 estimate_convergence <- function(X, s_orig, n_samples = 1000, ind) {
-    ## s_orig <- X$getstate()
-    sapply(seq.int(n_samples), function(i) frobenius_norm(s_orig[ind], sample_and_return_state(X, X$getncycles() )[ind] ))
+    sapply(seq.int(n_samples), function(i) l2_norm(s_orig[ind], sample_and_return_state(X, X$getncycles() )[ind] ))
 }
 
 
@@ -106,62 +105,256 @@ preprocess_data <- function(data, cutoff) {
 }
 
 ## ======================================================================
+## Utilities for the analysis of the International Trade Networks
+## ======================================================================
+
+##' Get a sampler based on the data.
+##'
+##' @param data A n x 3 matrix containing triplets representing the
+##'     network
+##' @param normalize Normalize the data. Boolean. Values are never scaled when normalizing.
+##' @param sampler_type A string denoting the type of constraints to use
+##'     on vertex strengths. Either "fixed" (preserve strengths
+##'     exactly) or "interval" (preserve strengths on an interval).
+##' @param interval The interval for preserving vertex strengths,
+##'     if sampler_type is interval. Default is interval = c(0.90,
+##'     1.10), i.e., [0.9 * ## nw, 1.1 * nw], allowing a +-10 percent
+##'     variation in node weights.
+##'
+##' @return The data as a matrix, with duplicated items removed (in columns 1 and 2).
+##'
+##' @export
+get_sampler <- function(data, normalize, sampler_type, interval = c(0.90, 1.10)) {
+    ## Normalize the range of data values
+    if (normalize) {
+        data_n <- normalizedata(data, scale_values = FALSE)
+    } else {
+        data_n <- data
+    }
+
+    ## Preserve vertex strengths exactly
+    if (sampler_type == "fixed") {
+        ew      <- matrix(nrow = nrow(data_n), ncol = 2)
+        ew[, 1] <- min(data_n[, 3])
+        ew[, 2] <- max(data_n[, 3])
+    }
+
+    ## Preserve vertex strengths on an interval
+    if (sampler_type == "interval") {
+        nw <- get_node_weights(data_n)
+
+        sl_tmp <- addselfloops(data_n, A = (nw * interval[1]), B = (nw * interval[2]))
+
+        ew      <- matrix(nrow = (nrow(data_n) + length(sl_tmp$a)), ncol = 2)
+        ew[, 1] <- c(rep(min(data_n[, 3]), nrow(data_n)), sl_tmp$a)
+        ew[, 2] <- c(rep(max(data_n[, 3]), nrow(data_n)), sl_tmp$b)
+
+        data_n <- rbind(data_n, sl_tmp$data)
+    }
+
+    ## Return (i) sampler,  (ii) indices of original (non-self-loop) data items and (iii) the network
+    list("sampler"      = cyclesampler(data_n, a = ew[, 1], b = ew[, 2]),
+         "ind"          = seq.int(nrow(data)),
+         "data"         = data,
+         "data_n"       = data_n,
+         "ew"           = ew,
+         "normalize"    = normalize,
+         "sampler_type" = sampler_type)
+}
+
+
+##' Calculate average clustering coefficient for a matrix.
+##'
+##' @param data A n x 3 matrix containing triplets representing the
+##'     network
+##' @param max_norm Scale the average clustering coefficient using the
+##'     maximum edge weight. Boolean. Default is TRUE.
+##' @param directed Boolean. Indicates if the network is directed or
+##'     not.
+##'
+##' @return The average clustering coefficient.
+##'
+##' @export
+get_cc <- function(data, max_norm = TRUE, directed = FALSE) {
+    library(Matrix)
+    n <- length(unique(c(data[, 1], data[, 2])))
+
+    if (directed) {
+        mat <- sparseMatrix(i = data[, 1], j = data[, 2], x = data[, 3])
+    } else {
+        mat <- sparseMatrix(i = data[, 1], j = data[, 2], x = data[, 3], symmetric = TRUE)
+    }
+
+    mat <- mat^(1/3)
+    tmp <- (mat %*% mat %*% mat)
+    cc  <- diag(tmp) / ((n - 1) * (n - 2))
+
+    if (max_norm)
+        cc <- cc / max(data[, 3])
+
+    sum(cc) / sum(cc > 0)
+}
+
+
+##' Helper function to get clustering coefficient from a data sample.
+##'
+##' @param data A n x 3 matrix containing triplets representing the
+##'     network.
+##' @param state Current state of the sampler. Vector.
+##' @param ind The indices of the state vector representing the
+##'     non-self-loop edges in the network.
+##' @param directed Boolean. Indicates if the network is directed or
+##'     not.
+##'
+##' @return The average clustering coefficient.
+##'
+##' @export
+get_cc_helper <- function(data, state, ind, directed) {
+    get_cc(cbind(data[, c(1, 2)], state[ind]), max_norm = TRUE, directed = directed)
+}
+
+
+##' Helper function to get clustering coefficient from a sampler.
+##'
+##' @param X A CycleSampler.
+##' @param data A n x 3 matrix containing triplets representing the
+##'     network.
+##' @param n_samples Number of sampler of the clustering coefficient to obtain.
+##' @param n_thin Thinning used when sampling the chain.
+##' @param ind The indices of the state vector representing the
+##'     non-self-loop edges in the network.
+##' @param directed Boolean. Indicates if the network is directed or
+##'     not.
+##'
+##' @return The average clustering coefficient.
+##'
+##' @export
+sample_cc <- function(X, data, n_samples, n_thin, ind, directed) {
+    replicate(n_samples,
+              get_cc_helper(data,
+                            state = sample_and_return_state(X, n_steps = (n_thin * X$getncycles())),
+                            ind = ind,
+                            directed = directed))
+}
+
+
+##' Sample n_samples using the Besag-Clifford 'serial' method
+##' It is here assumed that the sampler has not been "burned-in".
+##'
+##' @param sampler The output from \code{get_sampler}.
+##' @param n_samples Number of sampler of the clustering coefficient to obtain.
+##' @param n_thin Thinning used when sampling the chain.
+##' @param directed Boolean. Indicates if the network is directed or
+##'     not.
+##'
+##' @return The average clustering coefficient.
+##'
+##' @export
+get_cc_besag_clifford_serial <- function(sampler, n_samples, n_thin, directed) {
+    ## get the sampler and store the starting state
+    X  <- sampler$sampler
+    x0 <- X$getstate()
+
+    ## number of samples to obtain from the forward / backward chains
+    ind <- sample(seq.int(n_samples), 1) 
+    n_f  <- ind - 1
+    n_b  <- n_samples - ind
+    
+    ## sample the forward chain chain at intervals of n_thin starting from x0
+    cc_f <- sample_cc(X, data = sampler$data, n_samples = n_f, n_thin = n_thin, directed = directed, ind = sampler$ind)
+
+    ## sample the backward chain chain at intervals of n_thin starting from x0
+    X$setstate(x0)
+    cc_b <- sample_cc(X, data = sampler$data, n_samples = n_b, n_thin = n_thin, directed = directed, ind = sampler$ind)
+
+    ## return clustering coefficients
+    c(cc_f, cc_b)
+
+}
+
+
+##' Randomly shuffle edge weights in a network.
+##'
+##' @param data A n x 3 matrix containing triplets representing the
+##'     network.
+##' @return The network with the edge weights randomly shuffled.
+##'
+##' @export
+shuffle_weights <- function(data) {
+    data[, 3] <- sample(data[, 3])
+    data
+}
+
+
+##' Sample n_samples using the Besag-Clifford 'serial' method
+##' It is here assumed that the sampler has not been "burned-in".
+##'
+##' @param sampler The output from \code{get_sampler}.
+##' @param n_samples Number of sampler of the clustering coefficient to obtain.
+##' @param n_thin Thinning used when sampling the chain.
+##' @param directed Boolean. Indicates if the network is directed or
+##'     not.
+##'
+##' @return The average clustering coefficient.
+##'
+##' @export
+calc_stats <- function(x, year) {
+    m <- mean(x)
+    s <- sd(x)
+    c(as.numeric(year), m - s, m + s)
+}
+
+
+##' Helper function to read results from the ITN analysis and return a
+##' confidence interval of width 1 standard deviation.
+##'
+##' @param fname The RDS-file to read.
+##' 
+##' @return Return the mean and confidence intervals of width 1
+##'     standard deviation.
+##'
+##' @export
+read_itn_res_helper <- function(fname) {
+    year <- as.numeric(strsplit(basename(fname), "_")[[1]][1])
+    tmp  <- readRDS(fname)
+
+    ## calculate mean and standard deviation
+    x <- tmp$cc
+    m <- mean(x)
+    sd <- sd(x)
+    c(year, m-sd, m+sd)
+}
+    
+
+##' Read results from the ITN analysis and return the confidence
+##' intervals of width 1 standard deviation for each year in the ITN
+##' results.
+##'
+##' @param basepath The path to the directory holding the RDS-files.
+##' @param network_type A string denoting the type of the network
+##'     ("dir" or "undir").
+##' @param sampler_type A string denoting the type of the sampler
+##'     ("fixed" or "interval").
+##' 
+##' @return Return a matrix with confidence intervals of width 1
+##'     standard deviation for each year in the ITn results.
+##'
+##' @export
+read_itn_results <- function(basepath, network_type, sampler_type) {
+    flist         <- list.files(path = basepath, pattern = paste0("_", network_type, "_", sampler_type), full.names = TRUE)
+    res           <- t(sapply(flist, function(fname) read_itn_res_helper(fname)))
+    rownames(res) <- NULL
+    colnames(res) <- c("year", "ci_lower", "ci_upper")
+    res
+}
+
+
+## ======================================================================
 ## Utilities for plotting the results from the convergence experiments
 ## ======================================================================
 
 
-#' Read experimental results and scale the Frobenius norm to
-#' the interval [0, 1]
-#'
-#' @param basepath The location of the results (rds files)
-#' @param fpattern Pattern to use for matching filenames.
-#' @param log_downsample Should the data be downsampled using a
-#'     logarithmic spacing, useful for visualisation purposes
-#'     (Boolean, defailt is \code{FALSE}).
-#' @param jitter Should the data be jittered to prevent overplotting
-#'     (Boolean, defailt is \code{FALSE}).
-#'
-#' @return A list with the data as a matrix, as a data frame, a vector
-#'     containing the current sample for each dataset and a list
-#'     containing the indices of the data samples.
-#'
-#' @export
-read_data_convergence <- function(basepath, fpattern, log_downsample = FALSE, jitter = FALSE) {
-    flist <- list.files(path = basepath, pattern = fpattern, full.names = TRUE)
-
-    out <- sapply(flist, function(f) readRDS(f), simplify = "array")
-    colnames(out) <- gsub("_", " ", gsub(fpattern, "", sapply(colnames(out), basename, USE.NAMES = FALSE)))
-
-    ## Current last sample for all datasets
-    cs       <- colSums(! is.na(out))
-
-    ## Normalize the convergence times
-    out_n <- sweep(out, 2, out[1, ], FUN = '-')
-    out_n <- sweep(out_n, 2, apply(out_n, 2, max, na.rm = TRUE), FUN = '/')
-
-    if (jitter) {
-        for (i in seq.int(-3, 3))
-            out_n[, (i + 4)] <- out_n[, (i + 4)] + i/100
-    }
-
-    if (log_downsample) {
-        ind <- unique(floor(pracma::logseq(1, nrow(out_n), 1000)))
-        out_n <- out_n[ind, ]
-    } else {
-        ind <- seq.int(nrow(out_n))
-    }
-
-
-    out_df   <- as.data.frame(out_n)
-    out_df$t <- ind
-    out_df   <- melt(out_df, id = "t")
-
-    out_df$variable <- ordered(out_df$variable, levels = c("Last.fm", "MovieLens 100k", "FineFoods", "MovieLens 1M", "BookCrossing", "MovieLens 20M", "TasteProfile"))
-
-    list("out_n" = out_n, "out_df" = out_df, "cs" = cs, "ind" = ind)
-}
-
-#' Read experimental results (Frobenius norm) from the convergence
+#' Read experimental results (L2 norm) from the convergence
 #' experiments and visualise them.
 #'
 #' @param basepath The location of the results (rds files)
@@ -169,45 +362,104 @@ read_data_convergence <- function(basepath, fpattern, log_downsample = FALSE, ji
 #' @param log_ds Should the data be downsampled using a
 #'     logarithmic spacing, useful for visualisation purposes
 #'     (Boolean, defailt is \code{FALSE}).
+#' @param shift Should the data be jittered to prevent overplotting
+#'     (Boolean, default is \code{FALSE}).
 #'
 #' @return A ggplot2 object.
 #'
 #' @export
-load_results_and_plot <- function(basepath, fpattern, log_ds = TRUE) {
-    res    <- read_data_convergence(basepath, fpattern, log_downsample = log_ds, jitter = TRUE)
+load_results_and_plot <- function(basepath, fpattern, log_ds = TRUE, shift = FALSE) {
+    res    <- read_data_convergence(basepath, fpattern, log_downsample = log_ds, shift = shift)
     out_n  <- res$out_n
     out_df <- res$out_df
     cs     <- res$cs
-
+    
     ## Plot the results
     point <- format_format(big.mark = " ", decimal.mark = ",", scientific = FALSE)
 
     p <- ggplot(as.data.frame(out_df))
 
-    ## p <- p + geom_vline(xintercept = cs[["MovieLens 20M"]], colour = brewer.pal(n = 7, name = "Set2")[6], linetype = "dashed")
-    ## p <- p + geom_vline(xintercept = cs[["TasteProfile"]], colour = brewer.pal(n = 7, name = "Set2")[7], linetype = "dashed")
-
     p <- p + geom_line(aes(x = t, y = value, group = variable, colour = variable), size = 0.7)
-    p <- p + scale_x_log10(breaks = c(0, 100, 1000, 10000, 100000), labels = point, minor_breaks = NULL)
+    p <- p + scale_x_log10(breaks = c(1, 100, 1000, 10000, 100000), labels = point, minor_breaks = NULL)
     p <- p + scale_y_continuous(breaks = seq.int(0, 1, 0.25), minor_breaks = NULL)
 
     p <- p + scale_colour_brewer(palette = "Set2")
 
-
-    p <- p + ylab("Normalised Frobenius norm")
+    p <- p + facet_wrap(~variable, nrow = 3, ncol = 3)
+    
+    p <- p + ylab(TeX("Normalised $l^2$ norm"))
     p <- p + xlab("steps / null space dimensionality")
     p <- p + theme_bw()
-
+    
     p <- p + theme(legend.position=c(0.59, 0.28),
                    legend.title = element_blank(),
                    legend.background = element_rect(fill = "white"),
-                       ## element_blank(),
                    legend.key.height=unit(0.7, "line")
                    )
-    p <- p + guides(colour = guide_legend(override.aes = list(size = 3)))
 
+    p <- p + guides(colour = guide_legend(override.aes = list(size = 3), reverse = TRUE))
+
+    p <- p + theme(legend.position = "none")
+    
     p
 }
+
+
+#' Read experimental results (L2 norm) from the convergence
+#' experiments and visualise them.
+#'
+#' @param basepath The location of the results (rds files)
+#' @param dsname Name of dataset to plot.
+#' @param dsname Pattern to use for matching filenames.
+#' @param log_ds Should the data be downsampled using a
+#'     logarithmic spacing, useful for visualisation purposes
+#'     (Boolean, defailt is \code{FALSE}).
+#'
+#' @return A ggplot2 object.
+#'
+#' @export
+load_results_and_plot_l2_norm <- function(basepath, dsname, suffix, log_ds = TRUE) {
+    ## read data
+    res <- readRDS(file.path(basepath, paste0(dsname, "_", suffix,".rds")))
+
+    ## downsample and normalise
+    if (log_ds) {
+        ind <- unique(floor(pracma::logseq(1, length(res), 1000)))
+        res <- res[ind]
+    } else {
+        ind <- seq.int(length(res))
+    }
+        
+    res <- res - res[1]
+    res <- res / max(res, na.rm = TRUE)
+    
+    res_df <- data.frame("t" = ind, "value" = res)
+    
+    ## Plot the results
+    point <- format_format(big.mark = " ", decimal.mark = ",", scientific = FALSE)
+
+    p <- ggplot(as.data.frame(res_df))
+
+    p <- p + geom_line(aes(x = t, y = value), color = "black", size = 0.7)
+    p <- p + scale_x_log10(breaks = c(1, 100, 1000, 10000, 100000), labels = point, minor_breaks = NULL) ##, expand = c(0.2, 0, 0.2, 0))
+    p <- p + scale_y_continuous(breaks = seq.int(0, 1, 0.25), minor_breaks = NULL)
+
+    p <- p + ylab(TeX("Normalised $l^2$ norm"))
+    p <- p + xlab("steps / null space dimensionality")
+    p <- p + theme_bw()
+
+    p <- p + geom_rect(aes(xmin = 1000+50, xmax = 100000-5000, ymin = 0.25+0.05, ymax = 0.50-0.05), fill = "white")
+    p <- p + geom_text(aes(x = 100000-5000, y = 0.38), label = gsub("_", " ", dsname), hjust = "right")
+    
+    p <- p + theme(legend.position = "none")
+    p <- p + theme(panel.border = element_blank())
+    p <- p + theme(axis.line = element_line(colour = "black"))
+
+    p <- p + theme(plot.margin = unit(c(5,7,5,7), unit = "mm"))  # t r b l
+    
+    p
+}
+
 
 
 #' Helper function to be used with xtable to bold row names.
@@ -256,10 +508,10 @@ make_network_property_table <- function(respath) {
                                 res1$n_cycles,
 
                                 res2$t_normalize + res2$t_init,
-                                res2$t_sample,
-
+                                res2$t_sample_average,
+                                
                                 res3$t_normalize + res3$t_addselfloops + res3$t_init,
-                                res3$t_sample))
+                                res3$t_sample_average))
             dsname <- c(dsname, ds$name)
         }
 
@@ -275,3 +527,66 @@ make_network_property_table <- function(respath) {
     ## print(xtable(out), booktabs = TRUE)
     out
 }
+
+## ======================================================================
+## Utilities for plotting the results from the analysis of the
+## International Trade Networks.
+## ======================================================================
+
+#' Plot the ITN results.
+#'
+#' @param cc_orig Clustering coefficients from the original data
+#' @param cc_shuffle Clustering coefficients from data with edge weights permuted at random.
+#' @param cc_sampler1 Clustering coefficients from data with vertex strengths preserved exactly.
+#' @param cc_sampler2 Clustering coefficients from data with vertex strengths preserved on an interval.
+#' @param main Title of the plot.
+#' @param ylims Y-axis limits.
+#' @param xlab X-axis label.
+#' @param ylab Y-axis label.
+#' @param notitle Boolean indicating íf the title should be plotted or not. Default is FALSE.
+#'
+#' @return A plot.
+#'
+#' @export
+make_itn_plot <- function(cc_orig, cc_shuffle, cc_sampler1, cc_sampler2, main = NULL, ylims, xlab, ylab, notitle = FALSE) {
+    df_orig    <- data.frame(year = as.numeric(names(cc_orig)), value = cc_orig)
+    df_shuffle <- data.frame(year = cc_shuffle[, 1], ci_lower = cc_shuffle[, 2], ci_upper = cc_shuffle[, 3])
+    df_sampler1 <- data.frame(year = cc_sampler1[, 1], ci_lower = cc_sampler1[, 2], ci_upper = cc_sampler1[, 3])
+    df_sampler2 <- data.frame(year = cc_sampler2[, 1], ci_lower = cc_sampler2[, 2], ci_upper = cc_sampler2[, 3])
+
+    p <- ggplot()
+
+    a <- 0.5
+
+    col_1 <- "grey20"
+    col_2 <- "grey20"
+    col_3 <- "gray50"
+
+    
+    p <- p + geom_ribbon(data = df_shuffle, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_1, alpha = a)
+    p <- p + geom_ribbon(data = df_sampler1, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_2, alpha = a)
+    p <- p + geom_ribbon(data = df_sampler2, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_3, alpha = a)
+
+    p <- p + geom_line(data = df_shuffle, aes(x = year, y = ci_lower), colour = "black", linetype = "dotdash")
+    p <- p + geom_line(data = df_shuffle, aes(x = year, y = ci_upper), colour = "black", linetype = "dotdash")
+
+    p <- p + geom_line(data = df_sampler1, aes(x = year, y = ci_lower), colour = "black", linetype = "dashed")
+    p <- p + geom_line(data = df_sampler1, aes(x = year, y = ci_upper), colour = "black", linetype = "dashed")
+
+    p <- p + geom_line(data = df_sampler2, aes(x = year, y = ci_lower), colour = "black", linetype = "dotted")
+    p <- p + geom_line(data = df_sampler2, aes(x = year, y = ci_upper), colour = "black", linetype = "dotted")
+    
+    p <- p + geom_line(data = df_orig, aes(x = year, y = value), size = 1)
+
+    p <- p + scale_y_log10(limits = ylims)
+    p <- p + xlab(xlab)
+    p <- p + ylab(ylab)
+    p <- p + theme_bw()
+
+    if (! notitle)
+        p <- p + ggtitle(main)
+    
+    p
+}
+
+## ======================================================================

@@ -8,7 +8,7 @@
 ## Example usage:
 ##
 ##        Rscript --vanilla example_1.R
-##         
+##
 ## -----------------------------------------------------------------------------
 
 ## --------------------------------------------------
@@ -27,7 +27,7 @@ set.seed(42)
 ## length of the original data matrix without self-loops.
 gnw_helper <- function(data, values) {
     data[, 3] <- values[1:nrow(data)]
-    get_node_weights(data)$W
+    get_node_weights(data)
 }
 
 ## --------------------------------------------------
@@ -43,30 +43,24 @@ data <- matrix(c(1, 2, 1.5,
                  4, 6, 6),
                byrow = TRUE, ncol = 3)
 
+
+n_edges    <- nrow(data)
+n_vertices <- length(unique(c(data[, c(1, 2)])))
+
 minval <- 0
 maxval <- 24
 
-data_sl <- matrix(c(1, 1, 0,
-                    6, 6, 0),
-                  byrow = TRUE, ncol = 3)
+tmp <- addselfloops(data, A = rep(minval, n_vertices), B = rep(maxval, n_vertices))
 
-data[, 3] <- data[, 3] / 24
-
-data_all <- rbind(data, data_sl)
+data_all <- rbind(data, tmp$data)
 
 ## Allowed edge weights in [0, 24] hours
-a <- rep(0, 7)
-b <- rep(1, 7)
+a <- rep(minval, n_edges)
+b <- rep(maxval, n_edges)
 
 ## range for self-loops
-W_1 <- 13.5 / 24
-W_6 <- 13 / 24
-
-ar <- c(W_1, W_6) - 24 / 24
-br <- c(W_1, W_6) - 0 / 24
-
-al <- c(a, ar)
-bl <- c(b, br)
+al <- c(a, tmp$a)
+bl <- c(b, tmp$b)
 
 ## Sample N samples and calculate range of edge and node weights
 N <- 10000
@@ -79,29 +73,28 @@ N <- 10000
 X1 <- cyclesampler(data, a = a, b = b)
 X2 <- cyclesampler(data_all, a = al, b = bl)
 
-myfun <- function(s) {
+run_sampler <- function(s) {
     s$samplecycles2(1000)
     s$getstate()
 }
-    
-to_hour_helper <- function(x) {
-    x * 24
-}
-    
+
 ## edge weights
-CC_ew_1 <- apply(replicate(N, myfun(X1)), 1, to_hour_helper)
-CC_ew_2 <- apply(replicate(N, myfun(X2)), 1, to_hour_helper)
+CC_ew_1 <- t(replicate(N, run_sampler(X1)))
+CC_ew_2 <- t(replicate(N, run_sampler(X2)))
 
 ## node weights
 CC_nw_1 <- apply(CC_ew_1, 1, function(i) gnw_helper(data = data, values = i))
 CC_nw_2 <- apply(CC_ew_2, 1, function(i) gnw_helper(data = data, values = i))
 
 ## ---------- MaxEnt -----------------
-Y   <- maxentsampler(data)
+data_me      <- data
+data_me[, 3] <- data[, 3] / 24
+
+Y   <- maxentsampler(data_me)
 tmp <- Y$optimlambda(tol=0)
 
 ## Obtain 10000 samples from weight of vertex 2
-ME_ew_1 <- apply(replicate(N,Y$sample()), 1, to_hour_helper)
+ME_ew_1 <- t(replicate(N, Y$sample()) * 24)
 ME_nw_1 <- apply(ME_ew_1, 1, function(i) gnw_helper(data = data, values = i))
 
 ## -----------------------------------

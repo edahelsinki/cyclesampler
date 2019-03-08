@@ -43,14 +43,14 @@ data <- read_data(name = ds$fname, basepath = datadir)
 res  <- c(ds, get_data_properties(data))
 
 out <- list()
-out$t_normalize <- system.time( data <- normalizedata(data) )[3]
+out$t_normalize <- system.time( data <- normalizedata(data, scale_values = FALSE) )[3]
 
 out$t_addselfloops <- system.time(
 {
     w_tmp   <- get_node_weights(data)
 
-    nw_min <- w_tmp$W * 0.9
-    nw_max <- w_tmp$W * 1.1
+    nw_min <- w_tmp * 0.9
+    nw_max <- w_tmp * 1.1
 
     sl_tmp  <- addselfloops(data, A = nw_min, B = nw_max)
     data_sl <- rbind(data, sl_tmp$data)
@@ -62,7 +62,8 @@ out$t_init <- system.time( X <- cyclesampler(data_sl, a = c(rep(min(data[, 3]), 
 ## -- running time
 ## -----------------------------------------------------------------------------
 if (running_time) {
-    out$t_sample <- system.time( tmp  <- X$samplecycles2(n = X$getncycles()) )[3]
+    out$t_sample         <- replicate(10, system.time( tmp  <- X$samplecycles2(n = X$getncycles()) )[3])
+    out$t_sample_average <- mean(out$t_sample)
     saveRDS(out, file = paste0(outputdir, "/", ds$name, "_running_time_nwfix.rds"), compress = "xz")
 }
 

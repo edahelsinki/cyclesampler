@@ -7,11 +7,14 @@ indexed from 1:nrow, columns from 1:ncol, and that there are no empty
 rows or columns.}
 \usage{
 normalizedata(data, minv = min(data[, 3]), maxv = max(data[, 3]),
-  drange = maxv - minv + 1)
+  drange = maxv - minv + 1, scale_values = FALSE)
 }
 \arguments{
 \item{data}{data matrix where columns indicate row indices, column
 indices and values, respectively}
+
+\item{scale_values}{Should the values be scaled to the (0, 1)
+interval. Default is \code{FALSE}.}
 }
 \value{
 Data matrix with rows and columns re-indexed so that there

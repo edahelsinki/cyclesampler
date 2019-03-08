@@ -1,6 +1,6 @@
 Package: cyclesampler
 Title: Randomization Algorithms for Large Sparse Matrices
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(person("Kai", "Puolamäki", role = c("aut", "cre"), email = "kai.puolamaki@iki.fi"),
 	     person("University of Helsinki", role = c("cph")))
 Description: A property-preserving Markov Chain Monte Carlo method for
@@ -8,7 +8,7 @@ Description: A property-preserving Markov Chain Monte Carlo method for
 	     are constrained to an interval and vertex weights are
 	     preserved exactly, and (ii) edge and vertex weights are
 	     both constrained to intervals.
-Depends: R (>= 3.5)
+Depends: R (>= 3.3)
 License: MIT + file LICENSE
 Encoding: UTF-8
 RoxygenNote: 6.1.0
