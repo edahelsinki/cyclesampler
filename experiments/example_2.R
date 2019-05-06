@@ -61,8 +61,14 @@ samples_cy <- replicate(1000,{
 ## --------------------------------------------------
 
 pdf("fig1a.pdf")
+par(mar=c(5.5, 6.5, 5, 1))
+par(mgp=c(4, 1, 0))
+
 plot(c(0,1),c(0,1),bty="n",type="n",
-     main="",
+     cex.lab = 1.8,
+     cex.axis = 1.8,
+     cex.main = 1.8,
+     main="Maximum-entropy model",
      xlab=expression(paste(w^"*")(group("{",list(1,2),"}"))),
      ylab=expression(paste(w^"*")(group("{",list(2,3),"}"))))
 points(t(samples_me),pch=4)
@@ -70,9 +76,17 @@ points(0.3, 0.6, col = "black",pch = 19, cex = 2)
 lines(c(0.25,1,1,0.5,0.25,0.25), c(0.25,0.25,0.5,1,1,0.25), col = "black", lwd = 5)
 dev.off()
 
+## --------------------------------------------------
+
 pdf("fig1b.pdf")
+par(mar=c(5.5, 6.5, 5, 1))
+par(mgp=c(4, 1, 0))
+
 plot(c(0,1),c(0,1),bty="n",type="n",
-     main="",
+     cex.lab = 1.8,
+     cex.axis = 1.8,
+     cex.main = 1.8,
+     main="CycleSampler",
      xlab=expression(paste(w^"*")(group("{",list(1,2),"}"))),
      ylab=expression(paste(w^"*")(group("{",list(2,3),"}"))))
 points(t(samples_cy),pch=4)

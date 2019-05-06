@@ -205,12 +205,14 @@ get_cc <- function(data, max_norm = TRUE, directed = FALSE) {
 ##'     non-self-loop edges in the network.
 ##' @param directed Boolean. Indicates if the network is directed or
 ##'     not.
+##' @param max_norm Scale the average clustering coefficient using the
+##'     maximum edge weight. Boolean. Default is TRUE.
 ##'
 ##' @return The average clustering coefficient.
 ##'
 ##' @export
-get_cc_helper <- function(data, state, ind, directed) {
-    get_cc(cbind(data[, c(1, 2)], state[ind]), max_norm = TRUE, directed = directed)
+get_cc_helper <- function(data, state, ind, directed, max_norm = TRUE) {
+    get_cc(cbind(data[, c(1, 2)], state[ind]), directed = directed, max_norm = max_norm)
 }
 
 
@@ -225,16 +227,19 @@ get_cc_helper <- function(data, state, ind, directed) {
 ##'     non-self-loop edges in the network.
 ##' @param directed Boolean. Indicates if the network is directed or
 ##'     not.
+##' @param max_norm Scale the average clustering coefficient using the
+##'     maximum edge weight. Boolean. Default is TRUE.
 ##'
 ##' @return The average clustering coefficient.
 ##'
 ##' @export
-sample_cc <- function(X, data, n_samples, n_thin, ind, directed) {
+sample_cc <- function(X, data, n_samples, n_thin, ind, directed, max_norm = TRUE) {
     replicate(n_samples,
               get_cc_helper(data,
                             state = sample_and_return_state(X, n_steps = (n_thin * X$getncycles())),
                             ind = ind,
-                            directed = directed))
+                            directed = directed,
+                            max_norm = max_norm))
 }
 
 
@@ -242,34 +247,36 @@ sample_cc <- function(X, data, n_samples, n_thin, ind, directed) {
 ##' It is here assumed that the sampler has not been "burned-in".
 ##'
 ##' @param sampler The output from \code{get_sampler}.
-##' @param n_samples Number of sampler of the clustering coefficient to obtain.
+##' @param n_samples Number of sampler of the clustering coefficient
+##'     to obtain.
 ##' @param n_thin Thinning used when sampling the chain.
 ##' @param directed Boolean. Indicates if the network is directed or
 ##'     not.
+##' @param max_norm Scale the average clustering coefficient using the
+##'     maximum edge weight. Boolean. Default is TRUE.
 ##'
 ##' @return The average clustering coefficient.
 ##'
 ##' @export
-get_cc_besag_clifford_serial <- function(sampler, n_samples, n_thin, directed) {
+get_cc_besag_clifford_serial <- function(sampler, n_samples, n_thin, directed, max_norm = TRUE) {
     ## get the sampler and store the starting state
     X  <- sampler$sampler
     x0 <- X$getstate()
 
     ## number of samples to obtain from the forward / backward chains
     ind <- sample(seq.int(n_samples), 1) 
-    n_f  <- ind - 1
-    n_b  <- n_samples - ind
+    n_f <- ind - 1
+    n_b <- n_samples - ind
     
     ## sample the forward chain chain at intervals of n_thin starting from x0
-    cc_f <- sample_cc(X, data = sampler$data, n_samples = n_f, n_thin = n_thin, directed = directed, ind = sampler$ind)
+    cc_f <- sample_cc(X, data = sampler$data, n_samples = n_f, n_thin = n_thin, directed = directed, ind = sampler$ind, max_norm = max_norm)
 
     ## sample the backward chain chain at intervals of n_thin starting from x0
     X$setstate(x0)
-    cc_b <- sample_cc(X, data = sampler$data, n_samples = n_b, n_thin = n_thin, directed = directed, ind = sampler$ind)
+    cc_b <- sample_cc(X, data = sampler$data, n_samples = n_b, n_thin = n_thin, directed = directed, ind = sampler$ind, max_norm = max_norm)
 
     ## return clustering coefficients
     c(cc_f, cc_b)
-
 }
 
 
@@ -319,8 +326,8 @@ read_itn_res_helper <- function(fname) {
     tmp  <- readRDS(fname)
 
     ## calculate mean and standard deviation
-    x <- tmp$cc
-    m <- mean(x)
+    x  <- tmp$cc
+    m  <- mean(x)
     sd <- sd(x)
     c(year, m-sd, m+sd)
 }
@@ -352,58 +359,6 @@ read_itn_results <- function(basepath, network_type, sampler_type) {
 ## ======================================================================
 ## Utilities for plotting the results from the convergence experiments
 ## ======================================================================
-
-
-#' Read experimental results (L2 norm) from the convergence
-#' experiments and visualise them.
-#'
-#' @param basepath The location of the results (rds files)
-#' @param fpattern Pattern to use for matching filenames.
-#' @param log_ds Should the data be downsampled using a
-#'     logarithmic spacing, useful for visualisation purposes
-#'     (Boolean, defailt is \code{FALSE}).
-#' @param shift Should the data be jittered to prevent overplotting
-#'     (Boolean, default is \code{FALSE}).
-#'
-#' @return A ggplot2 object.
-#'
-#' @export
-load_results_and_plot <- function(basepath, fpattern, log_ds = TRUE, shift = FALSE) {
-    res    <- read_data_convergence(basepath, fpattern, log_downsample = log_ds, shift = shift)
-    out_n  <- res$out_n
-    out_df <- res$out_df
-    cs     <- res$cs
-    
-    ## Plot the results
-    point <- format_format(big.mark = " ", decimal.mark = ",", scientific = FALSE)
-
-    p <- ggplot(as.data.frame(out_df))
-
-    p <- p + geom_line(aes(x = t, y = value, group = variable, colour = variable), size = 0.7)
-    p <- p + scale_x_log10(breaks = c(1, 100, 1000, 10000, 100000), labels = point, minor_breaks = NULL)
-    p <- p + scale_y_continuous(breaks = seq.int(0, 1, 0.25), minor_breaks = NULL)
-
-    p <- p + scale_colour_brewer(palette = "Set2")
-
-    p <- p + facet_wrap(~variable, nrow = 3, ncol = 3)
-    
-    p <- p + ylab(TeX("Normalised $l^2$ norm"))
-    p <- p + xlab("steps / null space dimensionality")
-    p <- p + theme_bw()
-    
-    p <- p + theme(legend.position=c(0.59, 0.28),
-                   legend.title = element_blank(),
-                   legend.background = element_rect(fill = "white"),
-                   legend.key.height=unit(0.7, "line")
-                   )
-
-    p <- p + guides(colour = guide_legend(override.aes = list(size = 3), reverse = TRUE))
-
-    p <- p + theme(legend.position = "none")
-    
-    p
-}
-
 
 #' Read experimental results (L2 norm) from the convergence
 #' experiments and visualise them.
@@ -445,7 +400,7 @@ load_results_and_plot_l2_norm <- function(basepath, dsname, suffix, log_ds = TRU
     p <- p + scale_y_continuous(breaks = seq.int(0, 1, 0.25), minor_breaks = NULL)
 
     p <- p + ylab(TeX("Normalised $l^2$ norm"))
-    p <- p + xlab("steps / null space dimensionality")
+    p <- p + xlab("cycle-steps")
     p <- p + theme_bw()
 
     p <- p + geom_rect(aes(xmin = 1000+50, xmax = 100000-5000, ymin = 0.25+0.05, ymax = 0.50-0.05), fill = "white")
@@ -455,6 +410,13 @@ load_results_and_plot_l2_norm <- function(basepath, dsname, suffix, log_ds = TRU
     p <- p + theme(panel.border = element_blank())
     p <- p + theme(axis.line = element_line(colour = "black"))
 
+    p <- p + theme(axis.text = element_text(size = 10, colour = "black"),
+                   axis.title = element_text(size = 10, colour = "black"))
+
+    
+    p <- p + theme(panel.grid.major = element_blank(),
+                   panel.grid.minor = element_blank())
+    
     p <- p + theme(plot.margin = unit(c(5,7,5,7), unit = "mm"))  # t r b l
     
     p
@@ -543,29 +505,21 @@ make_network_property_table <- function(respath) {
 #' @param ylims Y-axis limits.
 #' @param xlab X-axis label.
 #' @param ylab Y-axis label.
+#' @param sci Should scientific notation be used on the y-axis?
 #' @param notitle Boolean indicating íf the title should be plotted or not. Default is FALSE.
 #'
 #' @return A plot.
 #'
 #' @export
-make_itn_plot <- function(cc_orig, cc_shuffle, cc_sampler1, cc_sampler2, main = NULL, ylims, xlab, ylab, notitle = FALSE) {
-    df_orig    <- data.frame(year = as.numeric(names(cc_orig)), value = cc_orig)
-    df_shuffle <- data.frame(year = cc_shuffle[, 1], ci_lower = cc_shuffle[, 2], ci_upper = cc_shuffle[, 3])
+make_itn_plot <- function(cc_orig, cc_shuffle, cc_sampler1, cc_sampler2, main = NULL, ylims, xlab, ylab, sci = TRUE, notitle = FALSE) {
+    df_orig     <- data.frame(year = as.numeric(names(cc_orig)), value = cc_orig)
+    df_shuffle  <- data.frame(year = cc_shuffle[, 1], ci_lower = cc_shuffle[, 2], ci_upper = cc_shuffle[, 3])
     df_sampler1 <- data.frame(year = cc_sampler1[, 1], ci_lower = cc_sampler1[, 2], ci_upper = cc_sampler1[, 3])
     df_sampler2 <- data.frame(year = cc_sampler2[, 1], ci_lower = cc_sampler2[, 2], ci_upper = cc_sampler2[, 3])
 
     p <- ggplot()
 
     a <- 0.5
-
-    col_1 <- "grey20"
-    col_2 <- "grey20"
-    col_3 <- "gray50"
-
-    
-    p <- p + geom_ribbon(data = df_shuffle, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_1, alpha = a)
-    p <- p + geom_ribbon(data = df_sampler1, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_2, alpha = a)
-    p <- p + geom_ribbon(data = df_sampler2, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = col_3, alpha = a)
 
     p <- p + geom_line(data = df_shuffle, aes(x = year, y = ci_lower), colour = "black", linetype = "dotdash")
     p <- p + geom_line(data = df_shuffle, aes(x = year, y = ci_upper), colour = "black", linetype = "dotdash")
@@ -578,10 +532,25 @@ make_itn_plot <- function(cc_orig, cc_shuffle, cc_sampler1, cc_sampler2, main = 
     
     p <- p + geom_line(data = df_orig, aes(x = year, y = value), size = 1)
 
-    p <- p + scale_y_log10(limits = ylims)
+    if (sci)
+        p <- p + scale_y_log10(limits = ylims, breaks = trans_breaks("log10", function(x) 10^x), labels = trans_format("log10", math_format(10^.x)))
+    else
+        p <- p + scale_y_log10(limits = ylims, breaks = trans_breaks("log10", function(x) 10^x), labels = number_format(accuracy = 0.01))
+    
     p <- p + xlab(xlab)
     p <- p + ylab(ylab)
+
     p <- p + theme_bw()
+
+    p <- p + theme(axis.text = element_text(size = 15),
+                   axis.title = element_text(size = 20),
+                   plot.title = element_text(hjust = 0.5, size = 20))
+
+    p <- p + theme(panel.grid.major = element_blank(),
+                   panel.grid.minor = element_blank())
+
+    p <- p + theme(panel.border = element_blank())
+    p <- p + theme(axis.line = element_line(colour = "black"))
 
     if (! notitle)
         p <- p + ggtitle(main)

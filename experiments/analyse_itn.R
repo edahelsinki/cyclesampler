@@ -11,7 +11,7 @@
 ## -----------------------------------------------------------------------------
 ## Example usage:
 ##
-##        Rscript --vanilla analyse_itn.R <data_type> <sampler_type> <year> <N_samples> <N_thin> <state_dir>
+##        Rscript --vanilla analyse_itn.R <data_type> <sampler_type> <normalise_cc> <year> <N_samples> <N_thin> <data_dir> <output_dir>
 ##
 ## -----------------------------------------------------------------------------
 
@@ -24,16 +24,18 @@ source("utilities.R")
 ## -----------------------------------------------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
 
-data_type    <- args[1]                    ## "undir" or "dir"
-sampler_type <- args[2]                    ## "fixed" or "interval
+data_type    <- args[1]                         ## "undir" or "dir"
+sampler_type <- args[2]                         ## "fixed" or "interval
 
-year         <- as.character(args[3])      ## 1948 to 2000
+normalise_cc <- as.logical(as.numeric(args[3])) ## normalise clustering coefficient using maximum edge weight (Boolean)
 
-N_samples    <- as.numeric(args[4])        ## 1000
-N_thin       <- as.numeric(args[5])        ## 1000
+year         <- as.character(args[4])           ## 1948 to 2000
 
-data_dir     <- as.character(args[6])      ## path to directory holding the datafile "itn_data.rds"
-output_dir   <- as.character(args[7])      ## path to the directory where the results should be saved
+N_samples    <- as.numeric(args[5])             ## 1000
+N_thin       <- as.numeric(args[6])             ## 1000
+
+data_dir     <- as.character(args[7])           ## path to directory holding the datafile "itn_data.rds"
+output_dir   <- as.character(args[8])           ## path to the directory where the results should be saved
 
 ## -----------------------------------------------------------------------------
 ## Set the random seed
@@ -67,14 +69,14 @@ sampler <- get_sampler(data = data, normalize = normalize, sampler_type = sample
 ## Acquire samples and calculate the clustering coefficient
 ## -----------------------------------------------------------------------------
 t_start <- Sys.time()
-res_cc  <- get_cc_besag_clifford_serial(sampler, n_samples = N_samples, n_thin = N_thin, directed = directed)
+res_cc  <- get_cc_besag_clifford_serial(sampler, n_samples = N_samples, n_thin = N_thin, directed = directed, max_norm = normalise_cc)
 t_stop  <- Sys.time()
 
 ## -----------------------------------------------------------------------------
 ## Save results
 ## -----------------------------------------------------------------------------
 saveRDS(list("cc"= res_cc,
-             "cc_orig" = get_cc(data = data, max_norm = TRUE, directed = directed),
+             "cc_orig" = get_cc(data = data, max_norm = normalise_cc, directed = directed),
              "t_start" = t_start,
              "t_tstop" = t_stop),
         file = file.path(output_dir, paste0(year, "_", data_type, "_", sampler_type, ".rds")),
