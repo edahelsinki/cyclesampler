@@ -400,7 +400,7 @@ load_results_and_plot_l2_norm <- function(basepath, dsname, suffix, log_ds = TRU
     p <- p + scale_y_continuous(breaks = seq.int(0, 1, 0.25), minor_breaks = NULL)
 
     p <- p + ylab(TeX("Normalised $l^2$ norm"))
-    p <- p + xlab("cycle-steps")
+    p <- p + xlab("cycle steps")
     p <- p + theme_bw()
 
     p <- p + geom_rect(aes(xmin = 1000+50, xmax = 100000-5000, ymin = 0.25+0.05, ymax = 0.50-0.05), fill = "white")
