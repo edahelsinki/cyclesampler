@@ -3,6 +3,11 @@ CycleSampler
 
 The `cyclesampler` R-package is an implementation of property-preserving Markov Chain Monte Carlo method for generating surrogate networks in which (i) edge weights are constrained to an  interval and vertex weights are preserved exactly, and (ii) edge and  vertex weights are both constrained to intervals.
 
+Please see the following article for details and discussion of the algorithm:
+
+> Kai Puolamäki, Andreas Henelius, Antti Ukkonen. Randomization algorithms for large sparse networks.
+> Physical Review E 99, 053311, 2019. <https://doi.org/10.1103/PhysRevE.99.053311>
+
 
 Installation
 -------------
