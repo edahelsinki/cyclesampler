@@ -1,8 +1,10 @@
 Experiments
 ===========
 
-The files in this folder are used to run the experiments for the paper
-"Randomization Algorithms for Large Sparse Networks".
+The files in this folder are used to run the experiments for the following paper:
+
+> Kai Puolamäki, Andreas Henelius, Antti Ukkonen. Randomization algorithms for large sparse networks.
+> Physical Review E 99, 053311, 2019. <https://doi.org/10.1103/PhysRevE.99.053311>
 
 
 Obtaining the data
